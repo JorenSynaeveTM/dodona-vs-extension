@@ -1,0 +1,37 @@
+name: Build extension
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout the code
+        uses: actions/checkout@v2
+      - name: Add nuget to PATH
+        uses: nuget/setup-nuget@v1
+      - name: Add msbuild to PATH
+        uses: microsoft/setup-msbuild@v1.0.2
+      - name: Update version
+        run: |
+          (Get-Content -Path dodona-vs-extension\source.extension.vsixmanifest) |
+            ForEach-Object {$_ -Replace '1.0.0', '1.0.${{ github.run_number }}'} |
+              Set-Content -Path dodona-vs-extension\source.extension.vsixmanifest
+          (Get-Content -Path dodona-vs-extension\Properties\AssemblyInfo.cs) |
+            ForEach-Object {$_ -Replace '1.0.0', '1.0.${{ github.run_number }}'} |
+              Set-Content -Path dodona-vs-extension\Properties\AssemblyInfo.cs
+          (Get-Content -Path dodona-vs-extension\dodona-vs-extension.cs) |
+            ForEach-Object {$_ -Replace '1.0.0', '1.0.${{ github.run_number }}'} |
+              Set-Content -Path dodona-vs-extension\dodona-vs-extension.cs
+      - name: Restore
+        run: nuget restore
+      - name: Build
+        run: msbuild /p:configuration=Release /p:DeployExtension=false /p:ZipPackageCompressionLevel=normal
+      - uses: actions/upload-artifact@v2
+        with:
+          name: dodona-vs-extension.vsix
+          path: dodona-vs-extension\bin\Release\dodona-vs-extension.vsix
