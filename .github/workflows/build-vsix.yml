@@ -21,12 +21,9 @@ jobs:
           (Get-Content -Path dodona-vs-extension\source.extension.vsixmanifest) |
             ForEach-Object {$_ -Replace '1.0.0', '1.0.${{ github.run_number }}'} |
               Set-Content -Path dodona-vs-extension\source.extension.vsixmanifest
-          (Get-Content -Path dodona-vs-extension\Properties\AssemblyInfo.cs) |
+          (Get-Content -Path dodona-vs-extension\source.extension.cs) |
             ForEach-Object {$_ -Replace '1.0.0', '1.0.${{ github.run_number }}'} |
-              Set-Content -Path dodona-vs-extension\Properties\AssemblyInfo.cs
-          (Get-Content -Path dodona-vs-extension\dodona-vs-extension.cs) |
-            ForEach-Object {$_ -Replace '1.0.0', '1.0.${{ github.run_number }}'} |
-              Set-Content -Path dodona-vs-extension\dodona-vs-extension.cs
+              Set-Content -Path dodona-vs-extension\source.extension.cs
       - name: Restore
         run: nuget restore
       - name: Build
