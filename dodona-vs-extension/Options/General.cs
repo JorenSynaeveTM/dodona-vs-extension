@@ -14,12 +14,6 @@ namespace dodona_vs_extension
 
     public class General : BaseOptionModel<General>
     {
-        [Category("My category")]
-        [DisplayName("My Option")]
-        [Description("An informative description.")]
-        [DefaultValue(true)]
-        public bool MyOption { get; set; } = true;
-
         [Category("Authorization")]
         [DisplayName("Dodona API key")]
         [Description("Specifies which API token should be used to authorize to Dodona.")]
