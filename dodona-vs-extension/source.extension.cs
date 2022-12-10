@@ -13,7 +13,7 @@ namespace dodona_vs_extension
 
 ";
         public const string Language = "en-US";
-        public const string Version = "1.0";
+        public const string Version = "1.0.0";
         public const string Author = "Joren Synaeve";
         public const string Tags = "";
     }
