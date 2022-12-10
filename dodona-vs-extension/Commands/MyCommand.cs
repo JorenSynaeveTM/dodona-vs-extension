@@ -58,7 +58,7 @@ namespace dodona_vs_extension
                 // Create a submission on Dodona
                 await PostToDodonaAsync(submission, dodonaApiKey);
 
-                await VS.MessageBox.ShowWarningAsync("dodona_vs_extension", "Clicked");
+                await VS.MessageBox.ShowAsync("Code has been submitted.");
             }
             catch (Exception ex)
             {
