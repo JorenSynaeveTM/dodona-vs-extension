@@ -1,35 +1,84 @@
-﻿using dodona_vs_extension.Models;
+﻿using dodona_vs_extension.Constants;
+using dodona_vs_extension.Models;
 using EnvDTE;
 using Microsoft.VisualStudio.Imaging;
 using Microsoft.VisualStudio.Shell.Interop;
 using Newtonsoft.Json;
+using System.ComponentModel;
 using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Mime;
+using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using static Microsoft.VisualStudio.Threading.AsyncReaderWriterLock;
+using OutputWindowPane = Community.VisualStudio.Toolkit.OutputWindowPane;
 
 namespace dodona_vs_extension
 {
     [Command(PackageIds.MyCommand)]
     internal sealed class MyCommand : BaseCommand<MyCommand>
     {
+        private OutputWindowPane _dodonaOutputPane = null;
+
+        /// <summary>
+        /// Main method when the button in the menu is clicked
+        /// </summary>
+        /// <param name="e"></param>
+        /// <returns></returns>
         protected override async Task ExecuteAsync(OleMenuCmdEventArgs e)
         {
             try
             {
                 await ValidateSettingsAsync();
                 Submission submission = await ValidateFileAsync();
-                //await SubmitToDodonaAsync(submission);
-                await SetInfobarMessageAsync("Code has been submitted.");
-                await SetInfobarMessageAsync("Awaiting results");
+                var submissionResponse = await SubmitToDodonaAsync(submission);
+                await SetOutputMessageASync("Code has been submitted.");
+                await CheckSubmissionResult(submissionResponse);
             }
             catch (Exception ex)
             {
                 _ = ShowErrorAsync(ex.Message, "Error occured");
             }
+        }
+
+        private async Task SetOutputMessageASync(string v)
+        {
+            if (_dodonaOutputPane == null)
+                _dodonaOutputPane = await VS.Windows.CreateOutputWindowPaneAsync("Dodona");
+
+            await _dodonaOutputPane.WriteLineAsync(v);
+        }
+
+        private async Task CheckSubmissionResult(SubmissionSubmittedResponse submissionResponse)
+        {
+            var general = await General.GetLiveInstanceAsync();
+            var client = new HttpClient()
+            {
+                BaseAddress = new Uri("https://dodona.ugent.be")
+            };
+            client.DefaultRequestHeaders.Add("Authorization", $"Token token=\"{general.DodonaApiKey}\"");
+
+            var submissionResult = new SubmissionResult() { Status = SubmissionStatus.StatusRunning };
+            var timer = new System.Timers.Timer();
+            timer.Elapsed += async (s, e) =>
+            {
+                var res = await client.GetAsync(submissionResponse.Url);
+                var jsonString = await res.Content.ReadAsStringAsync();
+                var submissionResult = JsonConvert.DeserializeObject<SubmissionResult>(jsonString);
+                SetOutputMessageASync("Checking submission result..." + submissionResult.Status);
+
+                if (submissionResult.Status != SubmissionStatus.StatusRunning && submissionResult.Status != SubmissionStatus.StatusQueued)
+                {
+                    timer.Stop();
+                    timer.Dispose();
+                    SetOutputMessageASync("Submission result: " + submissionResult.Status);
+                }
+            };
+            timer.Interval = 1000;
+            timer.Start();
         }
 
         /// <summary>
@@ -96,12 +145,11 @@ namespace dodona_vs_extension
             };
         }
 
-        private async Task SubmitToDodonaAsync(Submission content)
+        private async Task<SubmissionSubmittedResponse> SubmitToDodonaAsync(Submission content)
         {
             // Get general settings
             var general = await General.GetLiveInstanceAsync();
             // Set a baseUrl
-            string baseUrl = "https://dodona.ugent.be";
             string myContent = JsonConvert.SerializeObject(content);
             var buffer = System.Text.Encoding.UTF8.GetBytes(myContent);
             var byteContent = new ByteArrayContent(buffer);
@@ -109,32 +157,31 @@ namespace dodona_vs_extension
 
             var client = new HttpClient()
             {
-                BaseAddress = new Uri(baseUrl)
+                BaseAddress = new Uri("https://dodona.ugent.be")
             };
             client.DefaultRequestHeaders.Add("Authorization", $"Token token=\"{general.DodonaApiKey}\"");
 
             var res = await client.PostAsync("/submissions.json", byteContent);
+            string responseContent = await res.Content.ReadAsStringAsync();
+            return JsonConvert.DeserializeObject<SubmissionSubmittedResponse>(responseContent);
         }
 
         /// <summary>
         /// Sets a message in the infobar
         /// </summary>
         /// <param name="text"></param>
-        /// <returns>The infobar</returns>
-        private async Task<InfoBar> SetInfobarMessageAsync(string text)
+        /// <param name="dismissTimeout"></param>
+        private async Task SetInfobarMessageAsync(string text, int dismissTimeout = -1)
         {
-            var model = new InfoBarModel(
-    new[] {
-        new InfoBarTextSpan(text),
-        new InfoBarHyperlink("Click me")
-    },
-    KnownMonikers.PlayStepGroup,
-    true);
+            var model = new InfoBarModel(new[] { new InfoBarTextSpan(text) }, KnownMonikers.PlayStepGroup, true);
 
             InfoBar infoBar = await VS.InfoBar.CreateAsync(ToolWindowGuids80.SolutionExplorer, model);
             infoBar.ActionItemClicked += InfoBar_ActionItemClicked;
             await infoBar.TryShowInfoBarUIAsync();
-            return infoBar;
+
+            if (dismissTimeout != -1)
+            {
+            }
         }
 
         private void InfoBar_ActionItemClicked(object sender, InfoBarActionItemEventArgs e)
@@ -145,17 +192,6 @@ namespace dodona_vs_extension
             {
                 // do something
             }
-        }
-
-        private void DisimssInfobar(int seconds, InfoBar infoBar)
-        {
-            var timer = new System.Timers.Timer();
-            timer.Interval = seconds * 1000;
-            timer.Elapsed += (o, e) =>
-            {
-                infoBar.Close();
-            };
-            timer.Start();
         }
     }
 }
