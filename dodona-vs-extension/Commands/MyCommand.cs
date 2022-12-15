@@ -194,33 +194,5 @@ namespace dodona_vs_extension
             string responseContent = await res.Content.ReadAsStringAsync();
             return JsonConvert.DeserializeObject<SubmissionSubmittedResponse>(responseContent);
         }
-
-        /// <summary>
-        /// Sets a message in the infobar
-        /// </summary>
-        /// <param name="text"></param>
-        /// <param name="dismissTimeout"></param>
-        private async Task SetInfobarMessageAsync(string text, int dismissTimeout = -1)
-        {
-            var model = new InfoBarModel(new[] { new InfoBarTextSpan(text) }, KnownMonikers.PlayStepGroup, true);
-
-            InfoBar infoBar = await VS.InfoBar.CreateAsync(ToolWindowGuids80.SolutionExplorer, model);
-            infoBar.ActionItemClicked += InfoBar_ActionItemClicked;
-            await infoBar.TryShowInfoBarUIAsync();
-
-            if (dismissTimeout != -1)
-            {
-            }
-        }
-
-        private void InfoBar_ActionItemClicked(object sender, InfoBarActionItemEventArgs e)
-        {
-            ThreadHelper.ThrowIfNotOnUIThread();
-
-            if (e.ActionItem.Text == "Click me")
-            {
-                // do something
-            }
-        }
     }
 }
