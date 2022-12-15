@@ -2,6 +2,8 @@
 using dodona_vs_extension.Models;
 using EnvDTE;
 using Microsoft.VisualStudio.Imaging;
+using Microsoft.VisualStudio.PlatformUI;
+using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
 using Newtonsoft.Json;
 using System.ComponentModel;
@@ -14,6 +16,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using static Microsoft.VisualStudio.Threading.AsyncReaderWriterLock;
+using static System.Net.Mime.MediaTypeNames;
 using OutputWindowPane = Community.VisualStudio.Toolkit.OutputWindowPane;
 
 namespace dodona_vs_extension
@@ -23,6 +26,8 @@ namespace dodona_vs_extension
     {
         private OutputWindowPane _dodonaOutputPane = null;
         private string _exerciseUrl = string.Empty;
+        private ExerciseInformation _exerciseInformation = null;
+        private SubmissionSubmittedResponse _submissionSubmittedResponse = null;
 
         /// <summary>
         /// Main method when the button in the menu is clicked
@@ -35,10 +40,10 @@ namespace dodona_vs_extension
             {
                 await ValidateSettingsAsync();
                 Submission submission = await ValidateFileAsync();
-                ExerciseInformation exerciseInformation = await GetExerciseInformationAsync();
-                var submissionResponse = await SubmitToDodonaAsync(submission);
-                await SetOutputMessageAsync($"Code for \"{exerciseInformation.Name}\" has been submitted.");
-                await CheckSubmissionResultAsync(submissionResponse);
+                _exerciseInformation = await GetExerciseInformationAsync();
+                _submissionSubmittedResponse = await SubmitToDodonaAsync(submission);
+                await SetOutputMessageAsync($"Code for \"{_exerciseInformation.Name}\" has been submitted.");
+                await CheckSubmissionResultAsync();
             }
             catch (Exception ex)
             {
@@ -54,9 +59,9 @@ namespace dodona_vs_extension
             await _dodonaOutputPane.WriteLineAsync(v);
         }
 
-        private async Task CheckSubmissionResultAsync(SubmissionSubmittedResponse submissionResponse)
+        private async Task CheckSubmissionResultAsync()
         {
-            SetOutputMessageAsync("Checking submission result...");
+            await SetOutputMessageAsync("Checking submission result...");
             await VS.StatusBar.ShowMessageAsync("Checking submission result...");
             var general = await General.GetLiveInstanceAsync();
             var client = new HttpClient()
@@ -65,28 +70,51 @@ namespace dodona_vs_extension
             };
             client.DefaultRequestHeaders.Add("Authorization", $"Token token=\"{general.DodonaApiKey}\"");
 
-            var submissionResult = new SubmissionResult() { Status = SubmissionStatus.StatusRunning };
+            var submissionResult = new SubmissionResult() { Status = SubmissionStatus.Running };
             var timer = new System.Timers.Timer();
             timer.Elapsed += async (s, e) =>
             {
-                var res = await client.GetAsync(submissionResponse.Url);
+                var res = await client.GetAsync(_submissionSubmittedResponse.Url);
                 var jsonString = await res.Content.ReadAsStringAsync();
                 var submissionResult = JsonConvert.DeserializeObject<SubmissionResult>(jsonString);
 
-                if (submissionResult.Status != SubmissionStatus.StatusRunning && submissionResult.Status != SubmissionStatus.StatusQueued)
+                if (submissionResult.Status != SubmissionStatus.Running && submissionResult.Status != SubmissionStatus.Queued)
                 {
                     await VS.StatusBar.ClearAsync();
                     timer.Stop();
                     timer.Dispose();
-                    SetOutputMessageAsync("Submission result: " + submissionResult.Status);
+                    await SetOutputMessageAsync("Submission result: " + submissionResult.Status);
+
+                    await ShowSubmissionStatusInInforbarAsync(submissionResult.Status);
                 }
                 else
                 {
-                    SetOutputMessageAsync("Checking submission result...");
+                    await SetOutputMessageAsync("Checking submission result...");
                 }
             };
             timer.Interval = 5000;
             timer.Start();
+        }
+
+        private async Task ShowSubmissionStatusInInforbarAsync(string status)
+        {
+            string message = $"Solution to {_exerciseInformation.Name} ";
+
+            if (status == SubmissionStatus.Wrong)
+                message += $"was not correct.";
+
+            if (status == SubmissionStatus.CompilationError)
+                message += $"could not compile.";
+
+            if (status == SubmissionStatus.Correct)
+                message += $"has been accepted!";
+
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            var model = new InfoBarModel(new[] { new InfoBarTextSpan(message), new InfoBarHyperlink("View results") }, KnownMonikers.PlayStepGroup, true);
+            InfoBar infoBar = await VS.InfoBar.CreateAsync(ToolWindowGuids.SolutionExplorer, model);
+            infoBar.ActionItemClicked += (s, e) => { System.Diagnostics.Process.Start(_submissionSubmittedResponse.Url.Replace(".json", "")); };
+            await infoBar.TryShowInfoBarUIAsync();
+            VS.InfoBar.
         }
 
         /// <summary>
@@ -142,6 +170,7 @@ namespace dodona_vs_extension
             // If no document is open
             var activeDocument = await VS.Documents.GetActiveDocumentViewAsync();
             if (activeDocument == null) throw new Exception("No document is open. Please open a file in your editor.");
+            if (!activeDocument.WindowFrame.Caption.EndsWith(".cs")) throw new Exception("Please place your cursor in the file you would like to submit.");
         }
 
         private async Task ShowErrorAsync(string message, string title = "dodona_vs_extension")
