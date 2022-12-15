@@ -114,7 +114,6 @@ namespace dodona_vs_extension
             InfoBar infoBar = await VS.InfoBar.CreateAsync(ToolWindowGuids.SolutionExplorer, model);
             infoBar.ActionItemClicked += (s, e) => { System.Diagnostics.Process.Start(_submissionSubmittedResponse.Url.Replace(".json", "")); };
             await infoBar.TryShowInfoBarUIAsync();
-            VS.InfoBar.
         }
 
         /// <summary>
