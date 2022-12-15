@@ -54,6 +54,7 @@ namespace dodona_vs_extension
 
         private async Task CheckSubmissionResult(SubmissionSubmittedResponse submissionResponse)
         {
+            VS.StatusBar.ShowMessageAsync("Checking submission result...");
             var general = await General.GetLiveInstanceAsync();
             var client = new HttpClient()
             {
@@ -72,6 +73,7 @@ namespace dodona_vs_extension
 
                 if (submissionResult.Status != SubmissionStatus.StatusRunning && submissionResult.Status != SubmissionStatus.StatusQueued)
                 {
+                    VS.StatusBar.ClearAsync();
                     timer.Stop();
                     timer.Dispose();
                     SetOutputMessageASync("Submission result: " + submissionResult.Status);
@@ -96,16 +98,43 @@ namespace dodona_vs_extension
             // Check whether first line in code is a link to dodona
             var lines = content.Split('\n');
             var firstLine = lines.First();
-            var regex = new Regex(@".*(dodona.ugent.be).*(\/courses\/)(\d*)(\/series\/)(\d*)(\/activities\/)(\d*)");
+            var regex = new Regex(@"(https:\/\/)(dodona.ugent.be).*(\/courses\/)(\d*)(\/series\/)(\d*)(\/activities\/)(\d*)");
             var match = regex.Match(firstLine);
 
-            if (!match.Success) throw new Exception("First line of code is not a link to Dodona");
+            if (!match.Success) throw new Exception("First line of code is either not a link to Dodona or an invalid link.");
 
             // Get all information from the dodonaLink
-            var dodonaLink = match.Groups[0].Value;
+            var dodonaLink = match.Value;
             var submission = CreateSubmissionContent(match.Groups, content);
             return submission;
         }
+
+        private async Task<string> GetDodonaExerciseUrl()
+        {
+            // Get all content from the file
+            DocumentView docView = await VS.Documents.GetActiveDocumentViewAsync();
+            string content = docView.Document.TextBuffer.CurrentSnapshot.GetText();
+
+            // Check whether first line in code is a link to dodona
+            var lines = content.Split('\n');
+            var firstLine = lines.First();
+            var regex = new Regex(@"(https:\/\/)(dodona.ugent.be).*(\/courses\/)(\d*)(\/series\/)(\d*)(\/activities\/)(\d*)");
+            var match = regex.Match(firstLine);
+
+            if (!match.Success) throw new Exception("First line of code is either not a link to Dodona or an invalid link.");
+
+            return match.Groups[0].Value;
+        }
+
+        //private async Task<ExerciseInformation> GetExerciseInformationAsync()
+        //{
+        //    var general = await General.GetLiveInstanceAsync();
+        //    var client = new HttpClient()
+        //    {
+        //        BaseAddress = new Uri("https://dodona.ugent.be")
+        //    };
+        //    client.DefaultRequestHeaders.Add("Authorization", $"Token token=\"{general.DodonaApiKey}\"");
+        //}
 
         private async Task ValidateSettingsAsync()
         {
