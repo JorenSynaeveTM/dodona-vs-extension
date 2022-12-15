@@ -8,8 +8,10 @@ namespace dodona_vs_extension.Constants
 {
     public static class SubmissionStatus
     {
-        public const string StatusCorrect = "correct";
-        public const string StatusQueued = "queued";
-        public const string StatusRunning = "running";
+        public const string Correct = "correct";
+        public const string Queued = "queued";
+        public const string Running = "running";
+        public const string Wrong = "wrong";
+        public const string CompilationError = "compilation error";
     }
 }
