@@ -22,6 +22,7 @@ namespace dodona_vs_extension
     internal sealed class MyCommand : BaseCommand<MyCommand>
     {
         private OutputWindowPane _dodonaOutputPane = null;
+        private string _exerciseUrl = string.Empty;
 
         /// <summary>
         /// Main method when the button in the menu is clicked
@@ -34,9 +35,10 @@ namespace dodona_vs_extension
             {
                 await ValidateSettingsAsync();
                 Submission submission = await ValidateFileAsync();
+                ExerciseInformation exerciseInformation = await GetExerciseInformationAsync();
                 var submissionResponse = await SubmitToDodonaAsync(submission);
-                await SetOutputMessageASync("Code has been submitted.");
-                await CheckSubmissionResult(submissionResponse);
+                await SetOutputMessageAsync($"Code for \"{exerciseInformation.Name}\" has been submitted.");
+                await CheckSubmissionResultAsync(submissionResponse);
             }
             catch (Exception ex)
             {
@@ -44,7 +46,7 @@ namespace dodona_vs_extension
             }
         }
 
-        private async Task SetOutputMessageASync(string v)
+        private async Task SetOutputMessageAsync(string v)
         {
             if (_dodonaOutputPane == null)
                 _dodonaOutputPane = await VS.Windows.CreateOutputWindowPaneAsync("Dodona");
@@ -52,8 +54,10 @@ namespace dodona_vs_extension
             await _dodonaOutputPane.WriteLineAsync(v);
         }
 
-        private async Task CheckSubmissionResult(SubmissionSubmittedResponse submissionResponse)
+        private async Task CheckSubmissionResultAsync(SubmissionSubmittedResponse submissionResponse)
         {
+            SetOutputMessageAsync("Checking submission result...");
+            await VS.StatusBar.ShowMessageAsync("Checking submission result...");
             var general = await General.GetLiveInstanceAsync();
             var client = new HttpClient()
             {
@@ -68,16 +72,20 @@ namespace dodona_vs_extension
                 var res = await client.GetAsync(submissionResponse.Url);
                 var jsonString = await res.Content.ReadAsStringAsync();
                 var submissionResult = JsonConvert.DeserializeObject<SubmissionResult>(jsonString);
-                SetOutputMessageASync("Checking submission result..." + submissionResult.Status);
 
                 if (submissionResult.Status != SubmissionStatus.StatusRunning && submissionResult.Status != SubmissionStatus.StatusQueued)
                 {
+                    await VS.StatusBar.ClearAsync();
                     timer.Stop();
                     timer.Dispose();
-                    SetOutputMessageASync("Submission result: " + submissionResult.Status);
+                    SetOutputMessageAsync("Submission result: " + submissionResult.Status);
+                }
+                else
+                {
+                    SetOutputMessageAsync("Checking submission result...");
                 }
             };
-            timer.Interval = 1000;
+            timer.Interval = 5000;
             timer.Start();
         }
 
@@ -96,15 +104,27 @@ namespace dodona_vs_extension
             // Check whether first line in code is a link to dodona
             var lines = content.Split('\n');
             var firstLine = lines.First();
-            var regex = new Regex(@".*(dodona.ugent.be).*(\/courses\/)(\d*)(\/series\/)(\d*)(\/activities\/)(\d*)");
+            var regex = new Regex(@"(https:\/\/)(dodona.ugent.be).*(\/courses\/)(\d*)(\/series\/)(\d*)(\/activities\/)(\d*)");
             var match = regex.Match(firstLine);
 
-            if (!match.Success) throw new Exception("First line of code is not a link to Dodona");
+            if (!match.Success) throw new Exception("First line of code is either not a link to Dodona or an invalid link.");
 
             // Get all information from the dodonaLink
-            var dodonaLink = match.Groups[0].Value;
+            _exerciseUrl = match.Value;
             var submission = CreateSubmissionContent(match.Groups, content);
             return submission;
+        }
+
+        private async Task<ExerciseInformation> GetExerciseInformationAsync()
+        {
+            var general = await General.GetLiveInstanceAsync();
+            var client = new HttpClient();
+            client.DefaultRequestHeaders.Add("Authorization", $"Token token=\"{general.DodonaApiKey}\"");
+
+            var res = await client.GetAsync(_exerciseUrl + ".json");
+            var jsonString = await res.Content.ReadAsStringAsync();
+            ExerciseInformation exerciseInformation = JsonConvert.DeserializeObject<ExerciseInformation>(jsonString);
+            return exerciseInformation;
         }
 
         private async Task ValidateSettingsAsync()
@@ -131,8 +151,8 @@ namespace dodona_vs_extension
 
         private Submission CreateSubmissionContent(GroupCollection dodonaGroups, string code)
         {
-            var courseId = dodonaGroups[3];
-            var exerciseId = dodonaGroups[7];
+            var courseId = dodonaGroups[4];
+            var exerciseId = dodonaGroups[8];
 
             return new Submission()
             {
@@ -164,34 +184,6 @@ namespace dodona_vs_extension
             var res = await client.PostAsync("/submissions.json", byteContent);
             string responseContent = await res.Content.ReadAsStringAsync();
             return JsonConvert.DeserializeObject<SubmissionSubmittedResponse>(responseContent);
-        }
-
-        /// <summary>
-        /// Sets a message in the infobar
-        /// </summary>
-        /// <param name="text"></param>
-        /// <param name="dismissTimeout"></param>
-        private async Task SetInfobarMessageAsync(string text, int dismissTimeout = -1)
-        {
-            var model = new InfoBarModel(new[] { new InfoBarTextSpan(text) }, KnownMonikers.PlayStepGroup, true);
-
-            InfoBar infoBar = await VS.InfoBar.CreateAsync(ToolWindowGuids80.SolutionExplorer, model);
-            infoBar.ActionItemClicked += InfoBar_ActionItemClicked;
-            await infoBar.TryShowInfoBarUIAsync();
-
-            if (dismissTimeout != -1)
-            {
-            }
-        }
-
-        private void InfoBar_ActionItemClicked(object sender, InfoBarActionItemEventArgs e)
-        {
-            ThreadHelper.ThrowIfNotOnUIThread();
-
-            if (e.ActionItem.Text == "Click me")
-            {
-                // do something
-            }
         }
     }
 }
